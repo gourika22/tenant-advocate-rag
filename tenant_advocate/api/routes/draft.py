@@ -55,7 +55,7 @@ async def communication_draft(
         pdf_bytes = await file.read()
         parsed = parse_lease_bytes(pdf_bytes, filename=file.filename)
         if parsed.is_ready:
-            lease_text = parsed.get_context_text()
+            lease_text = parsed.full_text
 
     return StreamingResponse(
         _sse_stream(generate_draft(

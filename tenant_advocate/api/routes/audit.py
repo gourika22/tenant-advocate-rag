@@ -30,7 +30,7 @@ def _sse_stream(generator):
 @router.post("")
 async def audit_lease(file: UploadFile = File(...)) -> StreamingResponse:
     """
-    Upload a NSW lease PDF → stream back the structured Tenant Risk Report.
+    Upload a NSW lease PDF -> stream back the structured Tenant Risk Report.
 
     The lease is parsed in memory.
     """
@@ -51,7 +51,7 @@ async def audit_lease(file: UploadFile = File(...)) -> StreamingResponse:
         )
 
     return StreamingResponse(
-        _sse_stream(run_lease_audit(parsed.get_context_text())),
+        _sse_stream(run_lease_audit(parsed.full_text)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

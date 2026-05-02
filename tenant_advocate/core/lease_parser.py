@@ -16,8 +16,8 @@ from dataclasses import dataclass, field
 import pdfplumber
 from loguru import logger
 
-_MAX_CHARS = 20_000     # ~2 500 tokens — leaves room for law context + system prompt
-
+_MAX_CHARS = 2_000_000     # leaves room for law context + system prompt
+    
 
 @dataclass
 class ParsedLease:

@@ -18,8 +18,8 @@ from tenant_advocate.core.rag_engine import stream_chat_answer
 router = APIRouter()
 
 class ChatRequest(BaseModel):
-    question: str = Field(..., min_length=1, max_length=2000)
-    lease_text: str | None = Field(default=None, max_length=15000)
+    question: str = Field(..., min_length=1, max_length=5000)
+    lease_text: str | None = Field(default=None, max_length=2000000)
     chat_history: list[list[str]] = Field(default_factory=list)
 
 

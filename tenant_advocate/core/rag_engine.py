@@ -17,7 +17,7 @@ All three modes follow the same pattern:
 
 from __future__ import annotations
 
-from typing import Generator
+from typing import Generator, List
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -49,6 +49,33 @@ def _get_llm(*, streaming: bool = True) -> ChatOpenAI:
         openai_api_key=settings.openai_api_key,
     )
 
+# ── Lease chunking + retrieval helpers ─────────────────────
+
+def chunk_text(text: str, chunk_size: int = 5000, overlap: int = 300) -> List[str]:
+    chunks = []
+    start = 0
+
+    while start < len(text):
+        end = start + chunk_size
+        chunk = text[start:end]
+        chunks.append(chunk)
+        start += chunk_size - overlap
+
+    return chunks
+
+
+def retrieve_relevant_chunks(question: str, chunks: list[str], top_k: int = 3):
+    scored = []
+
+    q_words = question.lower().split()
+
+    for chunk in chunks:
+        score = sum(word in chunk.lower() for word in q_words)
+        scored.append((score, chunk))
+
+    scored.sort(reverse=True, key=lambda x: x[0])
+
+    return [chunk for score, chunk in scored[:top_k] if score > 0]
 
 # ── Mode 1: Reactive Q&A ──────────────────────────────────────────────────────
 
@@ -81,11 +108,20 @@ def stream_chat_answer(
             continue
         messages.append(HumanMessage(content=prior_q))
         messages.append(SystemMessage(content=prior_a))
+    
+    lease_context = None
+
+    if lease_text:
+        lease_chunks = chunk_text(lease_text)
+        relevant_chunks = retrieve_relevant_chunks(question, lease_chunks, top_k=5)
+
+        if relevant_chunks:
+            lease_context = "\n\n".join(relevant_chunks)
 
     messages.append(HumanMessage(content=build_chat_user_message(
         question=question,
         law_chunks=law_chunks,
-        lease_text=lease_text,
+        lease_text=lease_context,
     )))
 
     for chunk in _get_llm(streaming=True).stream(messages):
@@ -94,7 +130,6 @@ def stream_chat_answer(
 
 
 # ── Mode 2: Proactive Lease Audit ───────────────────────────
-
 def run_lease_audit(lease_text: str) -> Generator[str, None, None]:
     """
     Proactively scan every clause in an uploaded NSW lease and classify it.
@@ -129,26 +164,60 @@ def run_lease_audit(lease_text: str) -> Generator[str, None, None]:
         "strata body corporate rules tenant common property",
     ]
 
-    law_chunks: list[RetrievedChunk] = []
-    seen: set[str] = set()
-
+    law_chunks = []
+    seen = set()
     for q in audit_queries:
         for chunk in search_laws(q, top_k=4):
             if chunk.content not in seen:
                 law_chunks.append(chunk)
                 seen.add(chunk.content)
 
-    logger.info(f"[AUDIT] {len(law_chunks)} NSW law chunks retrieved for full lease audit")
+    logger.info(f"[AUDIT] Retrieved {len(law_chunks)} NSW law chunks")
 
-    messages = [
+    # Chunk lease text for processing — we don't want to hit token limits and it's more efficient to audit in sections
+    lease_chunks = chunk_text(lease_text)
+    logger.info(f"[AUDIT] Lease split into {len(lease_chunks)} chunks")
+
+
+    # Audit each chunk against the retrieved law, stream results immediately to the caller to avoid waiting for the entire audit to complete
+    all_findings = []
+    for i, lease_chunk in enumerate(lease_chunks):
+        logger.info(f"[AUDIT] Processing chunk {i+1}/{len(lease_chunks)}")
+        messages = [SystemMessage(content=AUDIT_SYSTEM_PROMPT),
+            HumanMessage(content=build_audit_user_message(lease_chunk, law_chunks)),]
+
+        chunk_output = ""
+
+        for token in _get_llm(streaming=True).stream(messages):
+            if token.content:
+                chunk_output += token.content
+
+        all_findings.append(chunk_output)
+
+    # Aggregate results from all chunks and prompt the LLM to merge, deduplicate, and classify into the final report format.
+    combined_findings = "\n\n".join(all_findings)
+
+    summary_messages = [
         SystemMessage(content=AUDIT_SYSTEM_PROMPT),
-        HumanMessage(content=build_audit_user_message(lease_text, law_chunks)),
+        HumanMessage(content=f"""
+                            You are given multiple partial lease audit outputs.
+
+                            Your job:
+                            - Merge into ONE final NSW Lease Audit Report
+                            - Remove duplicates
+                            - Group similar issues
+                            - Keep classifications (Illegal / Unfair / Standard / Favourable)
+                            - Ensure clean structure matching REQUIRED OUTPUT format
+
+                            PARTIAL FINDINGS:
+                            {combined_findings}
+                            """),
     ]
 
-    for chunk in _get_llm(streaming=True).stream(messages):
+    # Stream final output back to caller
+    for chunk in _get_llm(streaming=True).stream(summary_messages):
         if chunk.content:
             yield chunk.content
-
 
 # ── Mode 3: Communication Drafting Assistant ────────────────
 

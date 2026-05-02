@@ -309,13 +309,15 @@ def build_chat_user_message(
 def build_audit_user_message(lease_text: str, law_chunks: list) -> str:
     law_ctx = "\n\n".join(
         f"[{c.source_file}, p.{c.page}]\n{c.content}" for c in law_chunks
-    ) or "[No NSW law retrieved — audit cannot proceed without legislative context.]"
+    ) or "[No NSW law retrieved — audit cannot proceed.]"
 
     return (
         f"<LAW_CONTEXT>\n{law_ctx}\n</LAW_CONTEXT>\n\n"
-        f"<LEASE_TEXT>\n{lease_text}\n</LEASE_TEXT>\n\n"
-        "Perform a full clause-by-clause audit of this NSW lease "
-        "and return the structured report in the required format."
+        f"<LEASE_SECTION>\n{lease_text}\n</LEASE_SECTION>\n\n"
+        "Audit ONLY the clauses present in this section of the lease.\n"
+        "Do NOT assume missing clauses.\n"
+        "Do NOT repeat findings from other sections.\n\n"
+        "Return findings in the REQUIRED OUTPUT format."
     )
 
 
