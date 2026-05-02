@@ -49,34 +49,6 @@ def _get_llm(*, streaming: bool = True) -> ChatOpenAI:
         openai_api_key=settings.openai_api_key,
     )
 
-# ── Lease chunking + retrieval helpers ─────────────────────
-
-def chunk_text(text: str, chunk_size: int = 5000, overlap: int = 300) -> List[str]:
-    chunks = []
-    start = 0
-
-    while start < len(text):
-        end = start + chunk_size
-        chunk = text[start:end]
-        chunks.append(chunk)
-        start += chunk_size - overlap
-
-    return chunks
-
-
-def retrieve_relevant_chunks(question: str, chunks: list[str], top_k: int = 3):
-    scored = []
-
-    q_words = question.lower().split()
-
-    for chunk in chunks:
-        score = sum(word in chunk.lower() for word in q_words)
-        scored.append((score, chunk))
-
-    scored.sort(reverse=True, key=lambda x: x[0])
-
-    return [chunk for score, chunk in scored[:top_k] if score > 0]
-
 # ── Mode 1: Reactive Q&A ──────────────────────────────────────────────────────
 
 def stream_chat_answer(
@@ -109,14 +81,9 @@ def stream_chat_answer(
         messages.append(HumanMessage(content=prior_q))
         messages.append(SystemMessage(content=prior_a))
     
-    lease_context = None
-
-    if lease_text:
-        lease_chunks = chunk_text(lease_text)
-        relevant_chunks = retrieve_relevant_chunks(question, lease_chunks, top_k=5)
-
-        if relevant_chunks:
-            lease_context = "\n\n".join(relevant_chunks)
+    # Truncate lease to 6000 chars for chat context
+    # Enough for most relevant clauses without hitting token limits
+    lease_context = lease_text[:6000] if lease_text else None
 
     messages.append(HumanMessage(content=build_chat_user_message(
         question=question,
@@ -167,55 +134,25 @@ def run_lease_audit(lease_text: str) -> Generator[str, None, None]:
     law_chunks = []
     seen = set()
     for q in audit_queries:
-        for chunk in search_laws(q, top_k=4):
+        for chunk in search_laws(q, top_k=3):   # reduced from 5 to 3 to save tokens
             if chunk.content not in seen:
                 law_chunks.append(chunk)
                 seen.add(chunk.content)
 
-    logger.info(f"[AUDIT] Retrieved {len(law_chunks)} NSW law chunks")
+    logger.info(f"[AUDIT] {len(law_chunks)} law chunks retrieved")
 
-    # Chunk lease text for processing — we don't want to hit token limits and it's more efficient to audit in sections
-    lease_chunks = chunk_text(lease_text)
-    logger.info(f"[AUDIT] Lease split into {len(lease_chunks)} chunks")
+    # Truncate lease to 8000 chars — enough for a standard residential lease
+    # while keeping total prompt within safe token limits
+    truncated_lease = lease_text[:8000]
+    if len(lease_text) > 8000:
+        truncated_lease += "\n\n[... remainder of lease not shown — audit based on clauses above ...]"
 
-
-    # Audit each chunk against the retrieved law, stream results immediately to the caller to avoid waiting for the entire audit to complete
-    all_findings = []
-    for i, lease_chunk in enumerate(lease_chunks):
-        logger.info(f"[AUDIT] Processing chunk {i+1}/{len(lease_chunks)}")
-        messages = [SystemMessage(content=AUDIT_SYSTEM_PROMPT),
-            HumanMessage(content=build_audit_user_message(lease_chunk, law_chunks)),]
-
-        chunk_output = ""
-
-        for token in _get_llm(streaming=True).stream(messages):
-            if token.content:
-                chunk_output += token.content
-
-        all_findings.append(chunk_output)
-
-    # Aggregate results from all chunks and prompt the LLM to merge, deduplicate, and classify into the final report format.
-    combined_findings = "\n\n".join(all_findings)
-
-    summary_messages = [
+    messages = [
         SystemMessage(content=AUDIT_SYSTEM_PROMPT),
-        HumanMessage(content=f"""
-                            You are given multiple partial lease audit outputs.
-
-                            Your job:
-                            - Merge into ONE final NSW Lease Audit Report
-                            - Remove duplicates
-                            - Group similar issues
-                            - Keep classifications (Illegal / Unfair / Standard / Favourable)
-                            - Ensure clean structure matching REQUIRED OUTPUT format
-
-                            PARTIAL FINDINGS:
-                            {combined_findings}
-                            """),
+        HumanMessage(content=build_audit_user_message(truncated_lease, law_chunks)),
     ]
 
-    # Stream final output back to caller
-    for chunk in _get_llm(streaming=True).stream(summary_messages):
+    for chunk in _get_llm(streaming=True).stream(messages):
         if chunk.content:
             yield chunk.content
 

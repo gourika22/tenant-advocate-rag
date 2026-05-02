@@ -19,7 +19,7 @@ router = APIRouter()
 
 class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=5000)
-    lease_text: str | None = Field(default=None, max_length=2000000)
+    lease_text: str | None = Field(default=None, max_length=200000)
     chat_history: list[list[str]] = Field(default_factory=list)
 
 

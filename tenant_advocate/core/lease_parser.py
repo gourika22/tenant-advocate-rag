@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 import pdfplumber
 from loguru import logger
 
-_MAX_CHARS = 2_000_000     # leaves room for law context + system prompt
+_MAX_CHARS = 200_000 
     
 
 @dataclass
