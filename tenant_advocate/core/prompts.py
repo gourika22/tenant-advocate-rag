@@ -102,7 +102,6 @@ RULE 7 — ACKNOWLEDGE UNCERTAINTY
  RESPONSE FORMAT
 ===============================================================
 
-**Direct Answer**
 2-4 sentence plain-English summary of the answer.
 
 **What the Law Says**
