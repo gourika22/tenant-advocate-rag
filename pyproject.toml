@@ -1,32 +1,74 @@
-[build-system]
-requires = ["flit_core >=3.2,<4"]
-build-backend = "flit_core.buildapi"
-
-[project]
+[tool.poetry]
 name = "tenant-advocate-rag"
-version = "0.0.1"
-description = "An end-to-end Agentic RAG application that empowers renters to understand their legal rights. The system allows users to upload their lease agreements, ask questions in plain English, and receive legally grounded summaries cross-referenced against state tenancy laws."
+version = "0.1.0"
+description = "NSW Tenant Rights Advocate — FastAPI backend with Agentic RAG"
+package-mode = false
 authors = [
-  { name = "Gourika" },
+    "Gourika <gourika4006@gmail.com>"
 ]
-
 readme = "README.md"
-classifiers = [
-    "Programming Language :: Python :: 3",
-    
-]
-requires-python = "~=3.11.0"
 
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+
+# API layer
+fastapi           = ">=0.115.0"
+uvicorn           = { version = ">=0.30.6", extras = ["standard"] }
+pydantic          = ">=2.9.1"
+pydantic-settings = ">=2.5.2"
+
+# LLM & Orchestration  — all on the 0.3.x generation
+langchain           = ">=0.3.0"
+langchain-community = ">=0.3.0"
+langchain-openai    = ">=0.3.0"
+langchain-chroma    = ">=1.0.0"
+openai              = ">=1.45.0"
+
+# Vector Database — must be 1.x to match langchain-chroma 1.x
+chromadb = ">=1.0.9"
+
+# Document Processing
+pypdf      = ">=4.3.1"
+pdfplumber = ">=0.11.4"
+
+# Utilities
+python-dotenv = ">=1.0.1"
+tiktoken      = ">=0.7.0"
+loguru        = ">=0.7.2"
+rich          = ">=13.8.1"
+python-multipart = "^0.0.27"
+httpx = "^0.28.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest         = "8.3.3"
+pytest-cov     = "5.0.0"
+pytest-asyncio = "0.24.0"
+httpx          = ">=0.27.2"
+ruff           = "0.6.9"
+mypy           = "1.11.2"
+pre-commit     = "3.8.0"
+
+[tool.poetry.scripts]
+serve  = "tenant_advocate.api.main:serve"
+ingest = "tenant_advocate.ingestion.pipeline:main"
 
 [tool.ruff]
-line-length = 99
-src = ["tenant-advocate-rag"]
-include = ["pyproject.toml", "tenant-advocate-rag/**/*.py"]
+target-version = "py311"
+line-length    = 99
+src            = ["."]
 
 [tool.ruff.lint]
-extend-select = ["I"]  # Add import sorting
+extend-select = ["I", "E", "F", "N", "W", "UP"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["tenant-advocate-rag"]
+known-first-party          = ["tenant_advocate"]
 force-sort-within-sections = true
 
+[tool.pytest.ini_options]
+testpaths    = ["tests"]
+asyncio_mode = "auto"
+addopts      = "--cov=tenant_advocate --cov-report=term-missing -v"
+
+[build-system]
+requires      = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

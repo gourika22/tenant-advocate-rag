@@ -1,0 +1,55 @@
+# render.yaml — Render deployment configuration for the FastAPI backend
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: tenant-advocate-api
+    runtime: python
+    region: singapore   # closest to NSW users
+    plan: free          # upgrade to starter for production
+
+    buildCommand: |
+      pip install poetry &&
+      poetry install --no-dev &&
+      poetry run ingest
+
+    startCommand: |
+      poetry run uvicorn tenant_advocate.api.main:app
+      --host 0.0.0.0
+      --port $PORT
+      --workers 1
+
+    healthCheckPath: /health
+
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false          # set manually in Render dashboard — never in this file
+
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+
+      - key: CHAT_MODEL
+        value: gpt-4o
+
+      - key: CHROMA_PERSIST_DIR
+        value: ./data/chroma_db
+
+      - key: CHROMA_COLLECTION_NAME
+        value: tenancy_laws_nsw
+
+      - key: TOP_K_RESULTS
+        value: "6"
+
+      - key: RELEVANCE_THRESHOLD
+        value: "0.30"
+
+      - key: JURISDICTION
+        value: "New South Wales, Australia"
+
+      - key: LOG_LEVEL
+        value: WARNING
+
+      # IMPORTANT: After deploying Streamlit, set this to your Streamlit Cloud URL
+      # e.g. https://tenant-advocate.streamlit.app
+      - key: ALLOWED_ORIGINS
+        value: https://tenant-advocate.streamlit.app
